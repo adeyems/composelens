@@ -109,6 +109,8 @@ class ComposeIntegrationTest(unittest.TestCase):
         self.assertEqual(same.returncode, 0, same.stderr)
         changed = subprocess.run(command + ['-c', 'examples/override.yaml'], capture_output=True, text=True)
         self.assertEqual(changed.returncode, 1, changed.stderr)
+        self.assertEqual(json.loads(changed.stdout)['summary']['services'],
+                         [{'service': 'web', 'status': 'changed', 'fields': ['environment', 'image']}])
         self.assertEqual(json.loads(changed.stdout)['changes'],
                          [{'path': '/services/web/environment/MODE', 'kind': 'changed'},
                           {'path': '/services/web/image', 'kind': 'changed'}])

@@ -11,7 +11,7 @@ python3 -m unittest discover -s tests -v
 
 The synthetic example reports changes at `/services/web/image` and `/services/web/environment/MODE` and exits 1. Comparing the base file with itself exits 0. Repeat `-b` or `-c` for ordered layers on that side; Compose's merge rules apply. Input filenames are relative to the invoking working directory. `--project-directory` sets a **shared** base directory for both models (default current directory), including Compose path resolution. Both resolutions use project name `composelens` to avoid accidental project-name differences.
 
-Exit 0 means equal models, 1 means differences, and 2 means input/resolver errors. JSON reports go to stdout, errors to stderr. Changes include JSON Pointer paths (escaped `~` and `/`) and `added`, `removed` or `changed`. Object order is ignored, lists are compared positionally, and added/removed objects are reported once at their parent path. Reports omit configuration values. Resolver stderr is not printed because it can contain secrets; `resolver_warnings` flags its presence on each side. Inspect warnings locally before relying on a match. Raw resolver failure text is likewise withheld.
+Exit 0 means equivalent under the comparison rules below, 1 means differences, and 2 means input/resolver errors. JSON reports go to stdout, errors to stderr. Changes include JSON Pointer paths (escaped `~` and `/`) and `added`, `removed` or `changed`. Object order is ignored; lists other than service ports/volumes remain positional. Added/removed objects are reported once at their parent path. Reports omit configuration values. Resolver stderr is not printed because it can contain secrets; `resolver_warnings` flags its presence on each side. Inspect warnings locally before relying on a match. Raw resolver failure text is likewise withheld.
 
 ## Scope and safety
 
@@ -19,7 +19,20 @@ Only `docker compose config --format json` is invoked: no `up`, build, pull or c
 
 Each resolver call has a 30-second timeout. Output is currently buffered in memory without a size cap. The shell environment is copied once, but input files are not snapshotted; changing files during a comparison can affect results. Use the same Compose version and environment to reproduce a report. Integration tests require no running application containers; they test the real resolver and cannot silently skip in CI.
 
-There are no saved snapshots, profile-selection UI, ignore rules, semantic list matching or packaging yet. See `ROADMAP.md`.
+There are no saved snapshots, profile-selection UI, ignore rules or packaging yet. See `ROADMAP.md`.
+
+## Service summaries and resource matching
+
+Reports include `summary.services`, sorted by service name, with `added`, `removed`, `changed` or `unchanged` status and affected top-level service fields. A whole-service addition/removal uses `(service)` as its field marker. `summary.non_service_changes` counts change records outside services, so network/volume/project changes are not hidden. This is a direct configuration summary, not dependency-impact analysis or a security judgement.
+
+Only resolved service `ports` and `volumes` lists receive semantic matching:
+
+- Ports match on `(host_ip, target, published, protocol)`; changing any identity component is a removal plus an addition. Multiple host mappings to the same container port remain distinct. Protocol defaults to TCP for identity matching when omitted.
+- Mounts (`volumes`) match on container `target`. Source, type, read-only and other options are still compared within the matched mount.
+
+Reordering uniquely identified entries alone does not change the result. Other lists, including commands and entrypoints, remain order-sensitive. Missing/duplicate identities cause a conservative positional fallback, recorded in `comparison_notes`; entries are never silently collapsed. These identities follow [Compose's unique-resource merge rules](https://docs.docker.com/reference/compose-file/merge/), applied here to resolved-model comparison rather than implementing a YAML merger. Secrets/configs matching is not included yet.
+
+Change `path` points into the candidate for additions/changes and the baseline for removals. When comparing fields inside a matched resource, `baseline_path` also shows the corresponding baseline location, since indices can differ. For newly added fields that baseline location need not exist. Matching keys and configuration values are not printed; numeric indices reference the resolved models, not YAML line numbers. Service names, field names and paths can still be sensitive.
 
 ## Per-side environment files and profiles
 

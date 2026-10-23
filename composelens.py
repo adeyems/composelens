@@ -51,8 +51,25 @@ def resolve(files, directory, env_files=None, profiles=None, environment=None):
     return model, bool(result.stderr.strip())
 
 
-def differences(before, after):
-    """Object-order independent; list order matters. Paths use JSON Pointer escaping."""
+def resource_index(items, resource):
+    """Return unique resolved Compose identities, or None for ambiguous input."""
+    result = {}
+    for index, item in enumerate(items):
+        if not isinstance(item, dict) or 'target' not in item:
+            return None
+        identity = ([item.get('host_ip'), item['target'], item.get('published'), item.get('protocol', 'tcp')]
+                    if resource == 'ports' else [item['target']])
+        if any(isinstance(value, (dict, list)) for value in identity):
+            return None
+        key = json.dumps(identity, sort_keys=True)
+        if key in result:
+            return None
+        result[key] = (index, item)
+    return result
+
+
+def differences(before, after, notes=None):
+    """Semantic service ports/volumes; other lists remain positional."""
     changes = []
 
     def walk(left, right, path):
@@ -68,6 +85,25 @@ def differences(before, after):
                 else:
                     walk(left[key], right[key], child)
         elif isinstance(left, list):
+            parts = path.split('/')
+            if len(parts) == 4 and parts[1] == 'services' and parts[3] in ('ports', 'volumes'):
+                old, new = resource_index(left, parts[3]), resource_index(right, parts[3])
+                if old is not None and new is not None:
+                    for key in sorted(old.keys() | new.keys()):
+                        if key not in old:
+                            changes.append({'path': path + '/' + str(new[key][0]), 'kind': 'added'})
+                        elif key not in new:
+                            changes.append({'path': path + '/' + str(old[key][0]), 'kind': 'removed'})
+                        else:
+                            oi, ov = old[key]
+                            ni, nv = new[key]
+                            for change in differences(ov, nv):
+                                changes.append({'path': path + '/' + str(oi if change['kind'] == 'removed' else ni) + change['path'],
+                                                'baseline_path': path + '/' + str(oi) + change['path'],
+                                                'kind': change['kind']})
+                    return
+                if notes is not None:
+                    notes.append({'path': path, 'reason': 'ambiguous_resource_identity', 'matching': 'positional'})
             for index in range(max(len(left), len(right))):
                 child = path + '/' + str(index)
                 if index >= len(left):
@@ -81,6 +117,23 @@ def differences(before, after):
 
     walk(before, after, '')
     return changes
+
+
+def service_summary(before, after, changes):
+    old, new = before.get('services', {}), after.get('services', {})
+    services = []
+    other = 0
+    affected = {}
+    for change in changes:
+        parts = [p.replace('~1', '/').replace('~0', '~') for p in change['path'].split('/')[1:]]
+        if len(parts) >= 2 and parts[0] == 'services':
+            affected.setdefault(parts[1], set()).add(parts[2] if len(parts) > 2 else '(service)')
+        else:
+            other += 1
+    for name in sorted(old.keys() | new.keys()):
+        status = 'added' if name not in old else 'removed' if name not in new else 'changed' if name in affected else 'unchanged'
+        services.append({'service': name, 'status': status, 'fields': sorted(affected.get(name, set()))})
+    return {'services': services, 'non_service_changes': other}
 
 
 def main(argv=None):
@@ -103,11 +156,13 @@ def main(argv=None):
     try:
         before, bw = resolve(args.baseline, args.project_directory, **selections['baseline'], environment=environment)
         after, aw = resolve(args.candidate, args.project_directory, **selections['candidate'], environment=environment)
-        changes = differences(before, after)
+        notes = []
+        changes = differences(before, after, notes)
     except (ValueError, OSError, RecursionError) as error:
         print(json.dumps({'error': str(error)}), file=sys.stderr)
         return 2
     print(json.dumps({'version': 1, 'match': not changes, 'changes': changes,
+                      'summary': service_summary(before, after, changes), 'comparison_notes': notes,
                       'selections': selections,
                       'resolver_warnings': {'baseline': bw, 'candidate': aw}}, indent=2))
     return 1 if changes else 0
