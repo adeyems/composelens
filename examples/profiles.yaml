@@ -1,0 +1,6 @@
+services:
+  web:
+    image: "nginx:${COMPOSELENS_DEMO_TAG:-1.27}"
+  debug:
+    image: busybox:1.37
+    profiles: [debug]

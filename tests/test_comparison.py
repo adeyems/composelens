@@ -14,6 +14,19 @@ from composelens import differences, main, resolve
 
 
 class ComparisonTest(unittest.TestCase):
+    @patch('composelens.resolve')
+    def test_cli_uses_one_environment_snapshot(self, resolver):
+        seen = []
+        def fake(*args, **kwargs):
+            seen.append(dict(kwargs['environment']))
+            os.environ['COMPOSELENS_SNAPSHOT_TEST'] = 'changed'
+            return {'services': {}}, False
+        resolver.side_effect = fake
+        with patch.dict(os.environ, {'COMPOSELENS_SNAPSHOT_TEST': 'original'}), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(['-b', 'a', '-c', 'b']), 0)
+        self.assertEqual(seen[0], seen[1])
+        self.assertEqual(seen[1]['COMPOSELENS_SNAPSHOT_TEST'], 'original')
+
     def test_object_order_and_nested_changes(self):
         self.assertEqual(differences({'a': 1, 'b': 2}, {'b': 2, 'a': 1}), [])
         self.assertEqual(differences({'services': {'a': {'image': 'old'}}}, {'services': {'a': {'image': 'new'}}}),
@@ -112,3 +125,62 @@ class ComposeIntegrationTest(unittest.TestCase):
             second.write_text('services: [invalid]\n')
             with self.assertRaises(ValueError):
                 resolve([second], folder)
+
+    def test_side_specific_env_profiles_cli(self):
+        env = dict(os.environ)
+        env.pop('COMPOSELENS_DEMO_TAG', None)
+        env['COMPOSE_PROFILES'] = 'debug'
+        command = [sys.executable, 'composelens.py', '-b', 'examples/profiles.yaml', '-c', 'examples/profiles.yaml',
+                   '--baseline-env-file', 'examples/baseline.env', '--candidate-env-file', 'examples/candidate.env',
+                   '--baseline-no-profiles', '--candidate-profile', 'debug']
+        result = subprocess.run(command, capture_output=True, text=True, env=env)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report['changes'], [{'path': '/services/debug', 'kind': 'added'},
+                                             {'path': '/services/web/image', 'kind': 'changed'}])
+        self.assertEqual(report['selections']['baseline']['profiles'], [])
+        self.assertNotIn('nginx:1.28', result.stdout)
+
+    def test_env_layer_order_shell_precedence_and_dotenv(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            compose = root / 'compose.yaml'
+            compose.write_text('services:\n  web:\n    image: "nginx:${TAG}"\n')
+            (root / '.env').write_text('TAG=dotenv\n')
+            a, b = root / 'a.env', root / 'b.env'
+            a.write_text('TAG=first\n')
+            b.write_text('TAG=second\n')
+            env = dict(os.environ)
+            env.pop('TAG', None)
+            model, _ = resolve([compose], root, environment=env)
+            self.assertEqual(model['services']['web']['image'], 'nginx:dotenv')
+            model, _ = resolve([compose], root, env_files=[a, b], environment=env)
+            self.assertEqual(model['services']['web']['image'], 'nginx:second')
+            env['TAG'] = 'shell'
+            model, _ = resolve([compose], root, env_files=[a, b], environment=env)
+            self.assertEqual(model['services']['web']['image'], 'nginx:shell')
+
+    def test_profiles_inherited_explicit_none_and_wildcard(self):
+        env = dict(os.environ, COMPOSE_PROFILES='debug')
+        inherited, _ = resolve(['examples/profiles.yaml'], '.', environment=env)
+        disabled, _ = resolve(['examples/profiles.yaml'], '.', profiles=[], environment=env)
+        enabled, _ = resolve(['examples/profiles.yaml'], '.', profiles=['*'], environment=env)
+        self.assertIn('debug', inherited['services'])
+        self.assertNotIn('debug', disabled['services'])
+        self.assertIn('debug', enabled['services'])
+        self.assertEqual(env['COMPOSE_PROFILES'], 'debug')
+
+    def test_missing_env_and_invalid_profile(self):
+        with self.assertRaises(OSError):
+            resolve(['examples/base.yaml'], '.', env_files=['does-not-exist.env'])
+        with self.assertRaises(ValueError):
+            resolve(['examples/base.yaml'], '.', profiles=['bad profile'])
+
+    def test_no_profiles_overrides_env_file_profiles(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env_file = Path(folder) / 'profiles.env'
+            env_file.write_text('COMPOSE_PROFILES=debug\n')
+            env = dict(os.environ)
+            env.pop('COMPOSE_PROFILES', None)
+            model, _ = resolve(['examples/profiles.yaml'], '.', env_files=[env_file], profiles=[], environment=env)
+            self.assertNotIn('debug', model['services'])
