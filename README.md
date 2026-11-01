@@ -62,3 +62,7 @@ Repeat `--ignore /services/web/environment/BUILD_ID` to suppress a specific subt
 ## Installable command
 
 From this checkout, run `python3 -m pip install .` in a virtual environment. Then use `composelens --help` from any directory. Python 3.10+ is required; the package has no runtime Python dependencies. ComposeLens still needs Docker Compose for resolution. This installs locally and does not publish to PyPI. Run `python3 tools/check_install.py` to build a wheel and verify installation in a fresh virtual environment. Building requires setuptools from the configured package index.
+
+## Explicit local snapshots
+
+`--save-baseline-snapshot before.json` and `--save-candidate-snapshot after.json` deliberately save full, UNREDACTED resolved models, resolver-warning flags and source-selection provenance. Use synthetic configurations only: snapshots can contain interpolated credentials and paths. New files are created exclusively with mode 0600 on POSIX; Windows uses its normal filesystem access controls. Files are limited to 8 MiB; write failures may leave a partial file, which loading rejects. `--baseline-snapshot before.json --candidate-snapshot after.json` compares offline without Docker. Each side can instead use Compose files. Environment/profile overrides are rejected for snapshot inputs. Provenance records selections, not a complete shell environment or a reproducibility guarantee. Saving both sides is not a joint transaction.

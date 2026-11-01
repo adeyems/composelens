@@ -153,10 +153,53 @@ def filter_changes(changes, ignored):
     return kept, suppressed, rules
 
 
+MAX_SNAPSHOT = 8 * 1024 * 1024
+
+
+def save_snapshot(path, model, warnings, provenance):
+    snapshot = {'version': 1, 'model': model, 'resolver_warnings': warnings, 'provenance': provenance}
+    encoded = json.dumps(snapshot, ensure_ascii=True, indent=2).encode('utf-8')
+    if len(encoded) > MAX_SNAPSHOT:
+        raise ValueError('Snapshot exceeds 8 MiB')
+    # Resolved values may contain secrets: caller deliberately requests this file.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as output:
+        output.write(encoded)
+
+
+def load_snapshot(path):
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError('Duplicate snapshot JSON key')
+            value[key] = item
+        return value
+    with open(path, 'rb') as source:
+        encoded = source.read(MAX_SNAPSHOT + 1)
+    if len(encoded) > MAX_SNAPSHOT:
+        raise ValueError('Snapshot exceeds 8 MiB')
+    def reject_constant(value):
+        raise ValueError('Snapshot cannot contain non-finite numbers')
+    try:
+        snapshot = json.loads(encoded, object_pairs_hook=unique, parse_constant=reject_constant)
+    except (UnicodeError, json.JSONDecodeError):
+        raise ValueError('Snapshot must be valid JSON') from None
+    if (not isinstance(snapshot, dict) or set(snapshot) != {'version', 'model', 'resolver_warnings', 'provenance'}
+            or type(snapshot['version']) is not int or snapshot['version'] != 1
+            or type(snapshot['resolver_warnings']) is not bool or not isinstance(snapshot['provenance'], dict)
+            or not isinstance(snapshot['model'], dict) or not isinstance(snapshot['model'].get('services'), dict)):
+        raise ValueError('Invalid version-1 snapshot')
+    return snapshot
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('-b', '--baseline', action='append', required=True, help='Repeat for ordered baseline files')
-    parser.add_argument('-c', '--candidate', action='append', required=True, help='Repeat for ordered candidate files')
+    for side, short in [('baseline', '-b'), ('candidate', '-c')]:
+        source = parser.add_mutually_exclusive_group(required=True)
+        source.add_argument(short, '--' + side, action='append', help='Repeat for ordered Compose files')
+        source.add_argument('--' + side + '-snapshot', help='Read a saved resolved model without Docker')
+        parser.add_argument('--save-' + side + '-snapshot', help='Explicitly save unredacted resolved values to a new local file')
     parser.add_argument('--project-directory', default='.', help='Shared path/interpolation base (default current directory)')
     for side in ('baseline', 'candidate'):
         parser.add_argument(f'--{side}-env-file', action='append', help='Repeat for ordered Compose interpolation env files')
@@ -173,15 +216,35 @@ def main(argv=None):
             'profiles': [] if getattr(args, side + '_no_profiles') else getattr(args, side + '_profile')}
     try:
         filter_changes([], args.ignore)
-        before, bw = resolve(args.baseline, args.project_directory, **selections['baseline'], environment=environment)
-        after, aw = resolve(args.candidate, args.project_directory, **selections['candidate'], environment=environment)
+        resolved = {}
+        provenance = {}
+        for side in ('baseline', 'candidate'):
+            snapshot_path = getattr(args, side + '_snapshot')
+            if snapshot_path:
+                if selections[side]['env_files'] is not None or selections[side]['profiles'] is not None:
+                    raise ValueError('Snapshot inputs cannot use environment or profile overrides')
+                saved = load_snapshot(snapshot_path)
+                resolved[side] = (saved['model'], saved['resolver_warnings'])
+                provenance[side] = saved['provenance']
+            else:
+                files = getattr(args, side)
+                resolved[side] = resolve(files, args.project_directory, **selections[side], environment=environment)
+                provenance[side] = {'files': files, 'project_directory': args.project_directory, **selections[side]}
+        before, bw = resolved['baseline']
+        after, aw = resolved['candidate']
         notes = []
         changes, suppressed, rules = filter_changes(differences(before, after, notes), args.ignore)
+        for side in ('baseline', 'candidate'):
+            output = getattr(args, 'save_' + side + '_snapshot')
+            if output:
+                model, warning = resolved[side]
+                save_snapshot(output, model, warning, provenance[side])
     except (ValueError, OSError, RecursionError) as error:
         print(json.dumps({'error': str(error)}), file=sys.stderr)
         return 2
     print(json.dumps({'version': 1, 'match': not changes, 'changes': changes,
                       'summary': service_summary(before, after, changes), 'comparison_notes': notes,
+                      'snapshot_sources': {'baseline': args.baseline_snapshot, 'candidate': args.candidate_snapshot},
                       'selections': selections, 'ignored_paths': rules, 'suppressed_changes': suppressed,
                       'resolver_warnings': {'baseline': bw, 'candidate': aw}}, indent=2))
     return 1 if changes else 0
