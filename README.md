@@ -58,3 +58,7 @@ Resolver semantics: [official Docker Compose config documentation](https://docs.
 ## Exact ignore rules
 
 Repeat `--ignore /services/web/environment/BUILD_ID` to suppress a specific subtree. Rules use JSON Pointer escapes (`~1` for slash, `~0` for tilde), never wildcards. Root and numeric segments are rejected; ignore an entire port/mount list rather than unstable indices. The report includes effective `ignored_paths` and value-free `suppressed_changes`. Summary and exit status use remaining changes. A changed ancestor is not suppressed by a rule for a descendant. For semantically matched lists, both baseline and candidate paths must be covered.
+
+## Installable command
+
+From this checkout, run `python3 -m pip install .` in a virtual environment. Then use `composelens --help` from any directory. Python 3.10+ is required; the package has no runtime Python dependencies. ComposeLens still needs Docker Compose for resolution. This installs locally and does not publish to PyPI. Run `python3 tools/check_install.py` to build a wheel and verify installation in a fresh virtual environment. Building requires setuptools from the configured package index.

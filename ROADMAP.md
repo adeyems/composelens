@@ -15,3 +15,5 @@ Remaining candidate work, to scope against real personal use before estimating h
 No claims of submission eligibility or hours worked. Keep examples synthetic; no production deployment or container execution.
 
 Completed follow-up: exact ignore rules. See README for scope and remaining limitations.
+
+Completed packaging slice: installable wheel and console entry point with isolated installation checks in CI. Public package publication and broader release automation remain future work.

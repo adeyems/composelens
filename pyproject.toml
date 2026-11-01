@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "composelens"
+version = "0.1.0"
+description = "ComposeLens: local synthetic developer workflow tooling"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = []
+
+[project.scripts]
+composelens = "composelens:main"
+
+[tool.setuptools]
+py-modules = ["composelens"]
