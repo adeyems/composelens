@@ -13,3 +13,5 @@ Remaining candidate work, to scope against real personal use before estimating h
 - Resource/output limits, better safe diagnostics, packaging and broader Compose-version coverage.
 
 No claims of submission eligibility or hours worked. Keep examples synthetic; no production deployment or container execution.
+
+Completed follow-up: exact ignore rules. See README for scope and remaining limitations.

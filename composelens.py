@@ -136,6 +136,23 @@ def service_summary(before, after, changes):
     return {'services': services, 'non_service_changes': other}
 
 
+def filter_changes(changes, ignored):
+    rules = sorted(set(ignored))
+    for pointer in rules:
+        if not pointer.startswith('/') or re.search(r'~(?![01])', pointer):
+            raise ValueError('Ignore rules must be non-root JSON Pointers with valid escapes')
+        if any(part.isdecimal() for part in pointer.split('/')[1:]):
+            raise ValueError('Numeric ignore segments are unsupported; ignore the entire list instead')
+    def covered(path):
+        return any(path == rule or path.startswith(rule + '/') for rule in rules)
+    kept, suppressed = [], []
+    for change in changes:
+        # Both semantic identities must remain covered after a list reorder.
+        target = suppressed if covered(change['path']) and covered(change.get('baseline_path', change['path'])) else kept
+        target.append(change)
+    return kept, suppressed, rules
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-b', '--baseline', action='append', required=True, help='Repeat for ordered baseline files')
@@ -146,6 +163,7 @@ def main(argv=None):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(f'--{side}-profile', action='append', help='Repeat to activate profiles; quote * for all')
         group.add_argument(f'--{side}-no-profiles', action='store_true', help='Disable inherited profiles')
+    parser.add_argument('--ignore', action='append', default=[], help='Exact non-root JSON Pointer subtree; repeatable, no numeric segments')
     args = parser.parse_args(argv)
     environment = dict(os.environ)
     selections = {}
@@ -154,16 +172,17 @@ def main(argv=None):
             'env_files': getattr(args, side + '_env_file'),
             'profiles': [] if getattr(args, side + '_no_profiles') else getattr(args, side + '_profile')}
     try:
+        filter_changes([], args.ignore)
         before, bw = resolve(args.baseline, args.project_directory, **selections['baseline'], environment=environment)
         after, aw = resolve(args.candidate, args.project_directory, **selections['candidate'], environment=environment)
         notes = []
-        changes = differences(before, after, notes)
+        changes, suppressed, rules = filter_changes(differences(before, after, notes), args.ignore)
     except (ValueError, OSError, RecursionError) as error:
         print(json.dumps({'error': str(error)}), file=sys.stderr)
         return 2
     print(json.dumps({'version': 1, 'match': not changes, 'changes': changes,
                       'summary': service_summary(before, after, changes), 'comparison_notes': notes,
-                      'selections': selections,
+                      'selections': selections, 'ignored_paths': rules, 'suppressed_changes': suppressed,
                       'resolver_warnings': {'baseline': bw, 'candidate': aw}}, indent=2))
     return 1 if changes else 0
 

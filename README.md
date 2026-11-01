@@ -54,3 +54,7 @@ Reports include `selections` with supplied env-file paths and profile choices. `
 Both sides use one copied shell-environment snapshot, and each resolver gets its own copy. No global environment variables are changed. Referenced files are still read separately and can change between calls. This is not an isolated environment: use a controlled shell plus explicit files/profiles for reproducible comparisons.
 
 Resolver semantics: [official Docker Compose config documentation](https://docs.docker.com/reference/cli/docker/compose/config/).
+
+## Exact ignore rules
+
+Repeat `--ignore /services/web/environment/BUILD_ID` to suppress a specific subtree. Rules use JSON Pointer escapes (`~1` for slash, `~0` for tilde), never wildcards. Root and numeric segments are rejected; ignore an entire port/mount list rather than unstable indices. The report includes effective `ignored_paths` and value-free `suppressed_changes`. Summary and exit status use remaining changes. A changed ancestor is not suppressed by a rule for a descendant. For semantically matched lists, both baseline and candidate paths must be covered.
