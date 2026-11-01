@@ -66,3 +66,7 @@ From this checkout, run `python3 -m pip install .` in a virtual environment. The
 ## Explicit local snapshots
 
 `--save-baseline-snapshot before.json` and `--save-candidate-snapshot after.json` deliberately save full, UNREDACTED resolved models, resolver-warning flags and source-selection provenance. Use synthetic configurations only: snapshots can contain interpolated credentials and paths. New files are created exclusively with mode 0600 on POSIX; Windows uses its normal filesystem access controls. Files are limited to 8 MiB; write failures may leave a partial file, which loading rejects. `--baseline-snapshot before.json --candidate-snapshot after.json` compares offline without Docker. Each side can instead use Compose files. Environment/profile overrides are rejected for snapshot inputs. Provenance records selections, not a complete shell environment or a reproducibility guarantee. Saving both sides is not a joint transaction.
+
+## Resolved model traversal budgets
+
+Resolved and loaded snapshot models are limited to 100000 JSON value nodes and 64 nesting levels (root depth zero), including unchanged or ignored subtrees. Comparison refuses oversized models instead of returning a partial match or report. The same check runs before saving a snapshot. These are comparison-traversal limits: Docker stdout/stderr capture and JSON decoding are not streaming, and process-memory/disk budgets remain future work.

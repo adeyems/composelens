@@ -19,3 +19,5 @@ Completed follow-up: exact ignore rules. See README for scope and remaining limi
 Completed packaging slice: installable wheel and console entry point with isolated installation checks in CI. Public package publication and broader release automation remain future work.
 
 Completed scoped milestone: explicit local snapshots. See README for exact semantics and remaining limitations.
+
+Completed scoped follow-up: resolved model traversal budgets. See README for acceptance scope and remaining limitations.

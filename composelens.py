@@ -8,6 +8,30 @@ import subprocess
 import sys
 
 
+MAX_MODEL_NODES = 100_000
+MAX_MODEL_DEPTH = 64
+
+
+def validate_model_budget(model):
+    # Iterative validation avoids walking untrusted nesting recursively.
+    pending = [(model, 0)]
+    count = 0
+    while pending:
+        value, depth = pending.pop()
+        count += 1
+        if count > MAX_MODEL_NODES or depth > MAX_MODEL_DEPTH:
+            raise ValueError('Resolved model exceeds 100000 nodes or 64 nesting levels')
+        if isinstance(value, dict):
+            children = value.values()
+        elif isinstance(value, list):
+            children = value
+        else:
+            continue
+        if count + len(pending) + len(value) > MAX_MODEL_NODES:
+            raise ValueError('Resolved model exceeds 100000 nodes or 64 nesting levels')
+        pending.extend((item, depth + 1) for item in children)
+
+
 def resolve(files, directory, env_files=None, profiles=None, environment=None):
     directory = Path(directory).resolve(strict=True)
     if not directory.is_dir():
@@ -48,6 +72,7 @@ def resolve(files, directory, env_files=None, profiles=None, environment=None):
         raise ValueError('Compose did not return valid JSON; config --format json is required') from None
     if not isinstance(model, dict) or not isinstance(model.get('services'), dict):
         raise ValueError('Compose returned an unexpected model')
+    validate_model_budget(model)
     return model, bool(result.stderr.strip())
 
 
@@ -70,6 +95,8 @@ def resource_index(items, resource):
 
 def differences(before, after, notes=None):
     """Semantic service ports/volumes; other lists remain positional."""
+    validate_model_budget(before)
+    validate_model_budget(after)
     changes = []
 
     def walk(left, right, path):
@@ -157,6 +184,7 @@ MAX_SNAPSHOT = 8 * 1024 * 1024
 
 
 def save_snapshot(path, model, warnings, provenance):
+    validate_model_budget(model)
     snapshot = {'version': 1, 'model': model, 'resolver_warnings': warnings, 'provenance': provenance}
     encoded = json.dumps(snapshot, ensure_ascii=True, indent=2).encode('utf-8')
     if len(encoded) > MAX_SNAPSHOT:
@@ -190,6 +218,7 @@ def load_snapshot(path):
             or type(snapshot['resolver_warnings']) is not bool or not isinstance(snapshot['provenance'], dict)
             or not isinstance(snapshot['model'], dict) or not isinstance(snapshot['model'].get('services'), dict)):
         raise ValueError('Invalid version-1 snapshot')
+    validate_model_budget(snapshot['model'])
     return snapshot
 
 
