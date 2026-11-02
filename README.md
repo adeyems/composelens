@@ -70,3 +70,7 @@ From this checkout, run `python3 -m pip install .` in a virtual environment. The
 ## Resolved model traversal budgets
 
 Resolved and loaded snapshot models are limited to 100000 JSON value nodes and 64 nesting levels (root depth zero), including unchanged or ignored subtrees. Comparison refuses oversized models instead of returning a partial match or report. The same check runs before saving a snapshot. These are comparison-traversal limits: Docker stdout/stderr capture and JSON decoding are not streaming, and process-memory/disk budgets remain future work.
+
+## Bounded report encoding
+
+Final comparison JSON is limited to 8 MiB of ASCII-escaped output before anything is printed to stdout. Oversized reports fail with exit 2 and a JSON error on stderr, never a partial report or false match. This adds an output budget to model traversal limits; it is not a cap on all process allocations or Docker output capture. Explicitly requested snapshot files may already have been saved before final report encoding.

@@ -21,3 +21,5 @@ Completed packaging slice: installable wheel and console entry point with isolat
 Completed scoped milestone: explicit local snapshots. See README for exact semantics and remaining limitations.
 
 Completed scoped follow-up: resolved model traversal budgets. See README for acceptance scope and remaining limitations.
+
+Completed scoped follow-up: bounded report encoding. See README for precise behavior and remaining work.

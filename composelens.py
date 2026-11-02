@@ -222,6 +222,20 @@ def load_snapshot(path):
     return snapshot
 
 
+MAX_REPORT_BYTES = 8 * 1024 * 1024
+
+
+def encode_report(report):
+    chunks = []
+    size = 0
+    for chunk in json.JSONEncoder(indent=2, ensure_ascii=True).iterencode(report):
+        size += len(chunk)
+        if size > MAX_REPORT_BYTES:
+            raise ValueError('Comparison report exceeds 8 MiB; no partial report emitted')
+        chunks.append(chunk)
+    return ''.join(chunks)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for side, short in [('baseline', '-b'), ('candidate', '-c')]:
@@ -271,11 +285,17 @@ def main(argv=None):
     except (ValueError, OSError, RecursionError) as error:
         print(json.dumps({'error': str(error)}), file=sys.stderr)
         return 2
-    print(json.dumps({'version': 1, 'match': not changes, 'changes': changes,
+    report = {'version': 1, 'match': not changes, 'changes': changes,
                       'summary': service_summary(before, after, changes), 'comparison_notes': notes,
                       'snapshot_sources': {'baseline': args.baseline_snapshot, 'candidate': args.candidate_snapshot},
                       'selections': selections, 'ignored_paths': rules, 'suppressed_changes': suppressed,
-                      'resolver_warnings': {'baseline': bw, 'candidate': aw}}, indent=2))
+                      'resolver_warnings': {'baseline': bw, 'candidate': aw}}
+    try:
+        encoded = encode_report(report)
+    except ValueError as error:
+        print(json.dumps({'error': str(error)}), file=sys.stderr)
+        return 2
+    print(encoded)
     return 1 if changes else 0
 
 
