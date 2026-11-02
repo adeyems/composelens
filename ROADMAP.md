@@ -23,3 +23,5 @@ Completed scoped milestone: explicit local snapshots. See README for exact seman
 Completed scoped follow-up: resolved model traversal budgets. See README for acceptance scope and remaining limitations.
 
 Completed scoped follow-up: bounded report encoding. See README for precise behavior and remaining work.
+
+Completed scoped follow-up: resolver output spooling. See README for limitations and remaining work.

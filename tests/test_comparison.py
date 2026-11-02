@@ -44,7 +44,7 @@ class ComparisonTest(unittest.TestCase):
         self.assertEqual(differences([1, 2], [1]), [{'path': '/1', 'kind': 'removed'}])
         self.assertEqual(len(differences([1, 2], [2, 1])), 2)
 
-    @patch('composelens.subprocess.run')
+    @patch('composelens.capture_resolution')
     def test_resolver_arguments_and_warning(self, run):
         run.return_value = subprocess.CompletedProcess([], 0, '{"services":{}}', 'warning')
         model, warning = resolve(['examples/base.yaml', 'examples/override.yaml'], '.')
@@ -56,7 +56,7 @@ class ComparisonTest(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs['timeout'], 30)
         self.assertNotIn('shell', run.call_args.kwargs)
 
-    @patch('composelens.subprocess.run')
+    @patch('composelens.capture_resolution')
     def test_resolver_failures_hide_raw_output(self, run):
         for result in [subprocess.CompletedProcess([], 1, '', 'secret-password'),
                        subprocess.CompletedProcess([], 0, 'secret-password', ''),
@@ -66,7 +66,7 @@ class ComparisonTest(unittest.TestCase):
                 resolve(['examples/base.yaml'], '.')
             self.assertNotIn('secret-password', str(caught.exception))
 
-    @patch('composelens.subprocess.run')
+    @patch('composelens.capture_resolution')
     def test_timeout_and_missing_docker(self, run):
         for error in [FileNotFoundError(), subprocess.TimeoutExpired('docker', 30)]:
             run.side_effect = error

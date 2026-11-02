@@ -74,3 +74,7 @@ Resolved and loaded snapshot models are limited to 100000 JSON value nodes and 6
 ## Bounded report encoding
 
 Final comparison JSON is limited to 8 MiB of ASCII-escaped output before anything is printed to stdout. Oversized reports fail with exit 2 and a JSON error on stderr, never a partial report or false match. This adds an output budget to model traversal limits; it is not a cap on all process allocations or Docker output capture. Explicitly requested snapshot files may already have been saved before final report encoding.
+
+## Resolver output spooling
+
+Docker stdout/stderr now spool to private temporary files, then bounded reads accept at most 8 MiB of stdout and 64 KiB of diagnostics. Oversized or non-UTF-8 model output is rejected without echoing it. Temporary files close on success, errors and timeout. The 30-second timeout remains. This bounds retained output memory; it does not limit temporary disk consumption while Docker runs or memory within Docker itself. Streaming cancellation at a byte threshold remains future work.

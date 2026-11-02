@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 
 MAX_MODEL_NODES = 100_000
@@ -30,6 +31,24 @@ def validate_model_budget(model):
         if count + len(pending) + len(value) > MAX_MODEL_NODES:
             raise ValueError('Resolved model exceeds 100000 nodes or 64 nesting levels')
         pending.extend((item, depth + 1) for item in children)
+
+
+def capture_resolution(command, environment, timeout=30):
+    # Private temporary files prevent unbounded pipe capture in process memory.
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        result = subprocess.run(command, stdout=stdout, stderr=stderr, timeout=timeout,
+                                check=False, env=environment)
+        stdout.seek(0)
+        stderr.seek(0)
+        raw = stdout.read(8 * 1024 * 1024 + 1)
+        diagnostics = stderr.read(64 * 1024 + 1)
+        if len(raw) > 8 * 1024 * 1024 or len(diagnostics) > 64 * 1024:
+            raise ValueError('Compose output exceeds 8 MiB stdout or 64 KiB diagnostics')
+        try:
+            text = raw.decode('utf-8')
+        except UnicodeError:
+            raise ValueError('Compose output must be UTF-8') from None
+        return subprocess.CompletedProcess(command, result.returncode, text, diagnostics.decode('utf-8', errors='replace'))
 
 
 def resolve(files, directory, env_files=None, profiles=None, environment=None):
@@ -58,7 +77,7 @@ def resolve(files, directory, env_files=None, profiles=None, environment=None):
         command += ['-f', str(path)]
     command += ['config', '--format', 'json']
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False, env=child_env)
+        result = capture_resolution(command, child_env, timeout=30)
     except FileNotFoundError:
         raise ValueError('Docker CLI not found; install Docker with the Compose plugin') from None
     except subprocess.TimeoutExpired:
