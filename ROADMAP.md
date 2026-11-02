@@ -25,3 +25,5 @@ Completed scoped follow-up: resolved model traversal budgets. See README for acc
 Completed scoped follow-up: bounded report encoding. See README for precise behavior and remaining work.
 
 Completed scoped follow-up: resolver output spooling. See README for limitations and remaining work.
+
+Completed scoped follow-up: atomic snapshot publication. See README for remaining limitations.

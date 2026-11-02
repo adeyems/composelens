@@ -25,3 +25,17 @@ class SnapshotTest(unittest.TestCase):
             for value in ['{}','{"version":1,"version":2}','not-json']:
                 path.write_text(value)
                 with self.assertRaises(ValueError): load_snapshot(path)
+    def test_failed_sync_and_destination_race_preserve_outputs(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'snapshot.json'
+            with patch('composelens.os.fsync',side_effect=OSError('synthetic disk failure')):
+                with self.assertRaises(OSError):save_snapshot(path,{'services':{}},False,{})
+            self.assertEqual(list(Path(d).iterdir()),[])
+            original_link=os.link
+            def competing_writer(source,destination):
+                Path(destination).write_bytes(b'other writer')
+                original_link(source,destination)
+            with patch('composelens.os.link',side_effect=competing_writer):
+                with self.assertRaises(FileExistsError):save_snapshot(path,{'services':{}},False,{})
+            self.assertEqual(path.read_bytes(),b'other writer')
+            self.assertEqual(list(Path(d).iterdir()),[path])

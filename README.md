@@ -65,7 +65,7 @@ From this checkout, run `python3 -m pip install .` in a virtual environment. The
 
 ## Explicit local snapshots
 
-`--save-baseline-snapshot before.json` and `--save-candidate-snapshot after.json` deliberately save full, UNREDACTED resolved models, resolver-warning flags and source-selection provenance. Use synthetic configurations only: snapshots can contain interpolated credentials and paths. New files are created exclusively with mode 0600 on POSIX; Windows uses its normal filesystem access controls. Files are limited to 8 MiB; write failures may leave a partial file, which loading rejects. `--baseline-snapshot before.json --candidate-snapshot after.json` compares offline without Docker. Each side can instead use Compose files. Environment/profile overrides are rejected for snapshot inputs. Provenance records selections, not a complete shell environment or a reproducibility guarantee. Saving both sides is not a joint transaction.
+`--save-baseline-snapshot before.json` and `--save-candidate-snapshot after.json` deliberately save full, UNREDACTED resolved models, resolver-warning flags and source-selection provenance. Use synthetic configurations only: snapshots can contain interpolated credentials and paths. New files are created exclusively with mode 0600 on POSIX; Windows uses its normal filesystem access controls. Files are limited to 8 MiB and published atomically using the staging procedure below. `--baseline-snapshot before.json --candidate-snapshot after.json` compares offline without Docker. Each side can instead use Compose files. Environment/profile overrides are rejected for snapshot inputs. Provenance records selections, not a complete shell environment or a reproducibility guarantee. Saving both sides is not a joint transaction.
 
 ## Resolved model traversal budgets
 
@@ -78,3 +78,7 @@ Final comparison JSON is limited to 8 MiB of ASCII-escaped output before anythin
 ## Resolver output spooling
 
 Docker stdout/stderr now spool to private temporary files, then bounded reads accept at most 8 MiB of stdout and 64 KiB of diagnostics. Oversized or non-UTF-8 model output is rejected without echoing it. Temporary files close on success, errors and timeout. The 30-second timeout remains. This bounds retained output memory; it does not limit temporary disk consumption while Docker runs or memory within Docker itself. Streaming cancellation at a byte threshold remains future work.
+
+## Atomic snapshot publication
+
+Saved snapshots now write to a private same-directory staging file, flush and sync it, then publish using an exclusive hard link. A failed write/sync or an existing destination leaves no partial destination and cleans up staging on normal exceptions. Publication refuses filesystems without hard-link support rather than falling back to overwrite-prone behavior. Abrupt process exit can leave an orphan stage; directory-fsync power-loss durability and orphan cleanup remain future work. Two requested snapshot exports are still separate operations, not one transaction.

@@ -209,9 +209,17 @@ def save_snapshot(path, model, warnings, provenance):
     if len(encoded) > MAX_SNAPSHOT:
         raise ValueError('Snapshot exceeds 8 MiB')
     # Resolved values may contain secrets: caller deliberately requests this file.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, 'wb') as output:
-        output.write(encoded)
+    parent = Path(path).parent
+    # Hard-link publication is atomic and fails if the destination already exists.
+    fd, staged = tempfile.mkstemp(prefix='.composelens-', dir=parent)
+    try:
+        with os.fdopen(fd, 'wb') as output:
+            output.write(encoded)
+            output.flush()
+            os.fsync(output.fileno())
+        os.link(staged, path)
+    finally:
+        os.unlink(staged)
 
 
 def load_snapshot(path):
